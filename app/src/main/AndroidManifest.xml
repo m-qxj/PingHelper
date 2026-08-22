@@ -9,6 +9,7 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@drawable/app_logo"
         android:label="PingHelper"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">

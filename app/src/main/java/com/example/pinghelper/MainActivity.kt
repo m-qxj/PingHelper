@@ -8,16 +8,20 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
+import android.net.TrafficStats
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -25,8 +29,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,10 +44,7 @@ import kotlinx.coroutines.withContext
 data class AppDataUsage(
     val appName: String,
     val packageName: String,
-    val bytesReceived: Long,
-    val bytesTransferred: Long,
-    val totalBytes: Long,
-    var isBlocked: Boolean = false
+    val totalBytes: Long
 )
 
 class MainActivity : ComponentActivity() {
@@ -65,13 +69,12 @@ fun AppUsageScreen() {
     var appList by remember { mutableStateOf<List<AppDataUsage>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var hasPermission by remember { mutableStateOf(checkUsagePermission(context)) }
-    val blockedPackages = remember { mutableStateListOf<String>() }
     val scope = rememberCoroutineScope()
 
     fun loadData() {
         isLoading = true
         scope.launch(Dispatchers.IO) {
-            val apps = getAppsDataUsage(context, blockedPackages)
+            val apps = getAppsDataUsage(context)
             withContext(Dispatchers.Main) {
                 appList = apps
                 isLoading = false
@@ -90,29 +93,43 @@ fun AppUsageScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // الشعار
+        val imageResId = context.resources.getIdentifier("app_logo", "drawable", context.packageName)
+        if (imageResId != 0) {
+            Image(
+                painter = painterResource(id = imageResId),
+                contentDescription = "Logo",
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
         Text(
-            text = "مراقب استهلاك البيانات",
-            fontSize = 24.sp,
+            text = "مراقب استهلاك الإنترنت",
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier.padding(bottom = 8.dp)
+            color = Color.White
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         if (!hasPermission) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "يتطلب التطبيق صلاحية الوصول لإحصائيات استخدام البيانات لترتيب التطبيقات.",
+                        text = "يرجى منح صلاحية الوصول لإحصائيات الاستخدام لترتيب التطبيقات بدقة.",
                         color = Color.LightGray,
                         fontSize = 14.sp
                     )
@@ -124,7 +141,7 @@ fun AppUsageScreen() {
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676))
                     ) {
-                        Text("منح الصلاحية من الإعدادات", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("منح الصلاحية الآن", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -137,30 +154,28 @@ fun AppUsageScreen() {
                     CircularProgressIndicator(color = Color(0xFF00E676))
                 }
             } else {
-                Text(
-                    text = "التطبيقات مرتبة من الأكثر استهلاكاً إلى الأقل:",
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "التطبيقات مرتبة حسب الاستهلاك الفعلي:",
+                        fontSize = 13.sp,
+                        color = Color.Gray
+                    )
+                    TextButton(onClick = { loadData() }) {
+                        Text("تحديث", color = Color(0xFF00E676))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(appList, key = { it.packageName }) { app ->
-                        AppItemRow(
-                            app = app,
-                            onBlockToggle = { shouldBlock ->
-                                if (shouldBlock) {
-                                    if (!blockedPackages.contains(app.packageName)) {
-                                        blockedPackages.add(app.packageName)
-                                    }
-                                } else {
-                                    blockedPackages.remove(app.packageName)
-                                }
-                                loadData()
-                            }
-                        )
+                        AppItemRow(app = app)
                     }
                 }
             }
@@ -169,10 +184,8 @@ fun AppUsageScreen() {
 }
 
 @Composable
-fun AppItemRow(
-    app: AppDataUsage,
-    onBlockToggle: (Boolean) -> Unit
-) {
+fun AppItemRow(app: AppDataUsage) {
+    val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
 
     Card(
@@ -188,27 +201,12 @@ fun AppItemRow(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = app.appName,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        color = if (app.isBlocked) Color(0xFFFF5252) else Color(0xFF00E676),
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = if (app.isBlocked) "محظور" else "نشط",
-                            color = Color.Black,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = app.appName,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "الاستهلاك: ${formatBytes(app.totalBytes)}",
@@ -238,33 +236,37 @@ fun AppItemRow(
                 ) {
                     DropdownMenuItem(
                         text = {
-                            Text(
-                                "إيقاف إنترنت التطبيق",
-                                color = if (app.isBlocked) Color.Gray else Color(0xFFFF5252)
-                            )
+                            Text("إدارة إنترنت التطبيق (النظام)", color = Color(0xFF00E676))
                         },
                         onClick = {
                             menuExpanded = false
-                            onBlockToggle(true)
-                        },
-                        enabled = !app.isBlocked
+                            openAppSettings(context, app.packageName)
+                        }
                     )
                     DropdownMenuItem(
                         text = {
-                            Text(
-                                "إرجاع إنترنت التطبيق",
-                                color = if (!app.isBlocked) Color.Gray else Color(0xFF00E676)
-                            )
+                            Text("معلومات التطبيق", color = Color.White)
                         },
                         onClick = {
                             menuExpanded = false
-                            onBlockToggle(false)
-                        },
-                        enabled = app.isBlocked
+                            openAppSettings(context, app.packageName)
+                        }
                     )
                 }
             }
         }
+    }
+}
+
+fun openAppSettings(context: Context, packageName: String) {
+    try {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        val intent = Intent(Settings.ACTION_SETTINGS)
+        context.startActivity(intent)
     }
 }
 
@@ -286,70 +288,71 @@ fun checkUsagePermission(context: Context): Boolean {
     return mode == AppOpsManager.MODE_ALLOWED
 }
 
-fun getAppsDataUsage(context: Context, blockedPackages: List<String>): List<AppDataUsage> {
+fun getAppsDataUsage(context: Context): List<AppDataUsage> {
     val packageManager = context.packageManager
     val networkStatsManager = context.getSystemService(Context.NETWORK_STATS_SERVICE) as NetworkStatsManager
     val installedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
     val result = mutableListOf<AppDataUsage>()
 
-    val startTime = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000) // آخر 30 يوم
+    val startTime = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
     val endTime = System.currentTimeMillis()
 
     for (appInfo in installedApps) {
-        // تصفية تطبيقات النظام وعرض تطبيقات المستخدم فقط
-        if ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) == 0 || appInfo.packageName == context.packageName) {
+        val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+        if (!isSystemApp || appInfo.packageName == context.packageName) {
             val appName = packageManager.getApplicationLabel(appInfo).toString()
             val uid = appInfo.uid
 
-            var rxBytes = 0L
-            var txBytes = 0L
+            var totalBytes = 0L
 
-            try {
-                val bucket = networkStatsManager.querySummaryForDevice(
-                    ConnectivityManager.TYPE_WIFI,
-                    "",
-                    startTime,
-                    endTime
-                )
-                rxBytes += bucket.rxBytes
-                txBytes += bucket.txBytes
-            } catch (_: Exception) {}
+            totalBytes += getBytesForUid(networkStatsManager, ConnectivityManager.TYPE_WIFI, uid, startTime, endTime)
+            totalBytes += getBytesForUid(networkStatsManager, ConnectivityManager.TYPE_MOBILE, uid, startTime, endTime)
 
-            try {
-                val stats: NetworkStats = networkStatsManager.queryDetailsForUid(
-                    ConnectivityManager.TYPE_MOBILE,
-                    "",
-                    startTime,
-                    endTime,
-                    uid
-                )
-                val bucket = NetworkStats.Bucket()
-                while (stats.hasNextBucket()) {
-                    stats.getNextBucket(bucket)
-                    rxBytes += bucket.rxBytes
-                    txBytes += bucket.txBytes
+            if (totalBytes == 0L) {
+                val rx = TrafficStats.getUidRxBytes(uid)
+                val tx = TrafficStats.getUidTxBytes(uid)
+                if (rx != TrafficStats.UNSUPPORTED.toLong() && tx != TrafficStats.UNSUPPORTED.toLong()) {
+                    totalBytes = rx + tx
                 }
-                stats.close()
-            } catch (_: Exception) {}
-
-            val totalBytes = rxBytes + txBytes
-            val isBlocked = blockedPackages.contains(appInfo.packageName)
+            }
 
             result.add(
                 AppDataUsage(
                     appName = appName,
                     packageName = appInfo.packageName,
-                    bytesReceived = rxBytes,
-                    bytesTransferred = txBytes,
-                    totalBytes = totalBytes,
-                    isBlocked = isBlocked
+                    totalBytes = if (totalBytes < 0) 0 else totalBytes
                 )
             )
         }
     }
 
-    // ترتيب التطبيقات من الأكثر استهلاكاً إلى الأقل
     return result.sortedByDescending { it.totalBytes }
+}
+
+private fun getBytesForUid(
+    networkStatsManager: NetworkStatsManager,
+    networkType: Int,
+    uid: Int,
+    startTime: Long,
+    endTime: Long
+): Long {
+    var bytes = 0L
+    try {
+        val stats = networkStatsManager.queryDetailsForUid(
+            networkType,
+            "",
+            startTime,
+            endTime,
+            uid
+        )
+        val bucket = NetworkStats.Bucket()
+        while (stats.hasNextBucket()) {
+            stats.getNextBucket(bucket)
+            bytes += bucket.rxBytes + bucket.txBytes
+        }
+        stats.close()
+    } catch (_: Exception) {}
+    return bytes
 }
 
 fun formatBytes(bytes: Long): String {
