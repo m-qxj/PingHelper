@@ -185,6 +185,8 @@ fun GamingPingScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
         )
     }
 
+    var bestServerName by remember { mutableStateOf("Cloudflare (1.1.1.1)") }
+    var bestServerIp by remember { mutableStateOf("1.1.1.1") }
     var isTesting by remember { mutableStateOf(false) }
     var isDnsActive by remember { mutableStateOf(false) }
     var isFloatingActive by remember { mutableStateOf(false) }
@@ -207,8 +209,15 @@ fun GamingPingScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
 
                 server.copy(pingMs = avgPing, jitter = jitter, packetLoss = loss)
             }
+
+            val best = updated.filter { it.pingMs >= 0 }.minByOrNull { it.pingMs }
+
             withContext(Dispatchers.Main) {
                 servers = updated
+                if (best != null) {
+                    bestServerName = best.name
+                    bestServerIp = best.host
+                }
                 isTesting = false
             }
         }
@@ -225,6 +234,29 @@ fun GamingPingScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2F23)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    if (lang == AppLanguage.AR) "🏆 أفضل سيرفر تم رصده:" else "🏆 Best Active Server:",
+                    color = Color(0xFF00E676),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "$bestServerName ($bestServerIp)",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -235,7 +267,7 @@ fun GamingPingScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        if (lang == AppLanguage.AR) "⚡ تسريع DNS والألعاب (VPN)" else "⚡ DNS & Gaming Booster (VPN)",
+                        if (lang == AppLanguage.AR) "⚡ تفعيل تسريع أفضل DNS (VPN)" else "⚡ Activate Best DNS Booster (VPN)",
                         color = Color.White,
                         fontSize = 13.sp
                     )
@@ -243,7 +275,9 @@ fun GamingPingScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
                         checked = isDnsActive,
                         onCheckedChange = { active ->
                             isDnsActive = active
-                            val intent = Intent(context, PingVpnService::class.java)
+                            val intent = Intent(context, PingVpnService::class.java).apply {
+                                putExtra("DNS_IP", bestServerIp)
+                            }
                             if (active) {
                                 val vpnIntent = VpnService.prepare(context)
                                 if (vpnIntent != null) {
@@ -297,8 +331,8 @@ fun GamingPingScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676))
         ) {
             Text(
-                if (isTesting) (if (lang == AppLanguage.AR) "جاري الفحص..." else "Testing Ping...")
-                else (if (lang == AppLanguage.AR) "فحص البينج السريع 🎯" else "Run Fast Ping Test 🎯"),
+                if (isTesting) (if (lang == AppLanguage.AR) "جاري فحص واختيار الأفضل..." else "Finding Best Server...")
+                else (if (lang == AppLanguage.AR) "فحص واختيار أفضل سيرفر 🎯" else "Run Test & Select Best 🎯"),
                 color = Color.Black,
                 fontWeight = FontWeight.Bold
             )
@@ -316,7 +350,7 @@ fun GamingPingScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
                     ) {
                         Column {
                             Text(server.name, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp)
-                            Text("Jitter: ${server.jitter}ms | Loss: ${server.packetLoss}%", color = Color.Gray, fontSize = 11.sp)
+                            Text("IP: ${server.host} | Jitter: ${server.jitter}ms", color = Color.Gray, fontSize = 11.sp)
                         }
 
                         val pingColor = when {
