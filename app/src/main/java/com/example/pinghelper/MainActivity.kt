@@ -349,6 +349,7 @@ private fun pingHost(host: String): Long {
     } catch (_: Exception) { -1 }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NetworkUsageScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
     val context = LocalContext.current
