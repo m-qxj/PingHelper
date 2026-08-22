@@ -8,8 +8,6 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.net.TrafficStats
 import android.net.Uri
 import android.net.VpnService
 import android.net.wifi.WifiManager
@@ -21,7 +19,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,21 +34,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
 
+enum class AppLanguage { AR, EN }
+
 data class AppDataUsage(
     val appName: String,
     val packageName: String,
-    val totalBytes: Long,
-    var isBlocked: Boolean = false
+    val totalBytes: Long
 )
 
 data class ServerPingResult(
@@ -90,6 +91,7 @@ fun PingHelperTheme(content: @Composable () -> Unit) {
 @Composable
 fun MainScreen() {
     var selectedTab by remember { mutableStateOf(0) }
+    var currentLang by remember { mutableStateOf(AppLanguage.AR) }
 
     Scaffold(
         bottomBar = {
@@ -98,36 +100,76 @@ fun MainScreen() {
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
                     icon = { Icon(Icons.Default.SportsEsports, contentDescription = null) },
-                    label = { Text("الألعاب والـ Ping") }
+                    label = { Text(if (currentLang == AppLanguage.AR) "الألعاب والـ Ping" else "Gaming & Ping") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
                     icon = { Icon(Icons.Default.DataUsage, contentDescription = null) },
-                    label = { Text("استهلاك الشبكة") }
+                    label = { Text(if (currentLang == AppLanguage.AR) "استهلاك البيانات" else "Data Usage") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
                     icon = { Icon(Icons.Default.Wifi, contentDescription = null) },
-                    label = { Text("تشخيص الـ IP") }
+                    label = { Text(if (currentLang == AppLanguage.AR) "تشخيص الـ IP" else "IP Diagnostics") }
                 )
             }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
-                0 -> GamingPingScreen()
-                1 -> NetworkUsageScreen()
-                2 -> NetworkDiagnosticsScreen()
+                0 -> GamingPingScreen(currentLang) { currentLang = it }
+                1 -> NetworkUsageScreen(currentLang) { currentLang = it }
+                2 -> NetworkDiagnosticsScreen(currentLang) { currentLang = it }
             }
         }
     }
 }
 
-// ---------------- 1. شاشة البينج والألعاب ----------------
 @Composable
-fun GamingPingScreen() {
+fun HeaderBar(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val imageResId = context.resources.getIdentifier("app_logo", "drawable", context.packageName)
+            if (imageResId != 0) {
+                Image(
+                    painter = painterResource(id = imageResId),
+                    contentDescription = "Logo",
+                    modifier = Modifier.size(44.dp).clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            Column {
+                Text("PingHelper Pro", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(
+                    if (lang == AppLanguage.AR) "مُسرّع الألعاب ومراقب الشبكة" else "Gaming Booster & Network Monitor",
+                    fontSize = 11.sp,
+                    color = Color(0xFF00E676)
+                )
+            }
+        }
+
+        OutlinedButton(
+            onClick = {
+                onLangToggle(if (lang == AppLanguage.AR) AppLanguage.EN else AppLanguage.AR)
+            },
+            shape = RoundedCornerShape(20.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Text(if (lang == AppLanguage.AR) "🇸🇦 العربية" else "🇬🇧 English", color = Color(0xFF00E5FF), fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+fun GamingPingScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -178,27 +220,10 @@ fun GamingPingScreen() {
             .background(Color(0xFF121212))
             .padding(16.dp)
     ) {
-        // الشعار والعنوان
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val imageResId = context.resources.getIdentifier("app_logo", "drawable", context.packageName)
-            if (imageResId != 0) {
-                Image(
-                    painter = painterResource(id = imageResId),
-                    contentDescription = "Logo",
-                    modifier = Modifier.size(50.dp).clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-            }
-            Column {
-                Text("PingHelper Pro", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Text("مركز تحسين الألعاب والـ Ping", fontSize = 12.sp, color = Color(0xFF00E676))
-            }
-        }
+        HeaderBar(lang, onLangToggle)
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // كرت التحكم السريع بـ DNS والنافذة العائمة
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
             modifier = Modifier.fillMaxWidth()
@@ -209,7 +234,11 @@ fun GamingPingScreen() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("⚡ تسريع DNS والألعاب (VPN)", color = Color.White, fontSize = 14.sp)
+                    Text(
+                        if (lang == AppLanguage.AR) "⚡ تسريع DNS والألعاب (VPN)" else "⚡ DNS & Gaming Booster (VPN)",
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
                     Switch(
                         checked = isDnsActive,
                         onCheckedChange = { active ->
@@ -237,7 +266,11 @@ fun GamingPingScreen() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🎈 النافذة العائمة فوق الألعاب", color = Color.White, fontSize = 14.sp)
+                    Text(
+                        if (lang == AppLanguage.AR) "🎈 النافذة العائمة فوق الألعاب" else "🎈 Floating Ping Widget",
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
                     Switch(
                         checked = isFloatingActive,
                         onCheckedChange = { active ->
@@ -263,7 +296,12 @@ fun GamingPingScreen() {
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676))
         ) {
-            Text(if (isTesting) "جاري اختبار السيرفرات..." else "فحص البينج الحالي الآن 🎯", color = Color.Black, fontWeight = FontWeight.Bold)
+            Text(
+                if (isTesting) (if (lang == AppLanguage.AR) "جاري الفحص..." else "Testing Ping...")
+                else (if (lang == AppLanguage.AR) "فحص البينج السريع 🎯" else "Run Fast Ping Test 🎯"),
+                color = Color.Black,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -311,13 +349,14 @@ private fun pingHost(host: String): Long {
     } catch (_: Exception) { -1 }
 }
 
-// ---------------- 2. شاشة استهلاك الإنترنت والجدار الناري ----------------
 @Composable
-fun NetworkUsageScreen() {
+fun NetworkUsageScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
     val context = LocalContext.current
     var appList by remember { mutableStateOf<List<AppDataUsage>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(false) }
     var daysFilter by remember { mutableStateOf(30) }
+    var hasPermission by remember { mutableStateOf(checkUsagePermission(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
     fun loadData() {
@@ -331,8 +370,26 @@ fun NetworkUsageScreen() {
         }
     }
 
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val isGranted = checkUsagePermission(context)
+                hasPermission = isGranted
+                if (isGranted) {
+                    loadData()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     LaunchedEffect(daysFilter) {
-        loadData()
+        if (hasPermission) {
+            loadData()
+        }
     }
 
     Column(
@@ -341,41 +398,97 @@ fun NetworkUsageScreen() {
             .background(Color(0xFF121212))
             .padding(16.dp)
     ) {
-        Text("مراقب البيانات والجدار الناري", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        HeaderBar(lang, onLangToggle)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            if (lang == AppLanguage.AR) "مراقب استهلاك البيانات" else "Data Usage Tracker",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            FilterChip(selected = daysFilter == 1, onClick = { daysFilter = 1 }, label = { Text("اليوم") })
-            FilterChip(selected = daysFilter == 7, onClick = { daysFilter = 7 }, label = { Text("آخر 7 أيام") })
-            FilterChip(selected = daysFilter == 30, onClick = { daysFilter = 30 }, label = { Text("آخر 30 يوم") })
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color(0xFF00E676))
+        if (!hasPermission) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = if (lang == AppLanguage.AR)
+                            "تطلب هذه الميزة صلاحية الوصول لإحصائيات الاستخدام للترتيب بدقة."
+                        else
+                            "This feature requires Usage Access permission to track usage accurately.",
+                        color = Color.LightGray,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676))
+                    ) {
+                        Text(
+                            if (lang == AppLanguage.AR) "منح الصلاحية الآن" else "Grant Permission Now",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(appList) { app ->
-                    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(app.appName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text(formatBytes(app.totalBytes), color = Color(0xFF00E676), fontSize = 12.sp)
-                            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                FilterChip(
+                    selected = daysFilter == 1,
+                    onClick = { daysFilter = 1 },
+                    label = { Text(if (lang == AppLanguage.AR) "اليوم" else "Today") }
+                )
+                FilterChip(
+                    selected = daysFilter == 7,
+                    onClick = { daysFilter = 7 },
+                    label = { Text(if (lang == AppLanguage.AR) "آخر 7 أيام" else "Last 7 Days") }
+                )
+                FilterChip(
+                    selected = daysFilter == 30,
+                    onClick = { daysFilter = 30 },
+                    label = { Text(if (lang == AppLanguage.AR) "آخر 30 يوم" else "Last 30 Days") }
+                )
+            }
 
-                            IconButton(onClick = { openAppSettings(context, app.packageName) }) {
-                                Icon(Icons.Default.Settings, contentDescription = "إعدادات", tint = Color.Gray)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF00E676))
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(appList) { app ->
+                        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(app.appName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(formatBytes(app.totalBytes), color = Color(0xFF00E676), fontSize = 12.sp)
+                                }
+
+                                IconButton(onClick = { openAppSettings(context, app.packageName) }) {
+                                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.Gray)
+                                }
                             }
                         }
                     }
@@ -385,12 +498,10 @@ fun NetworkUsageScreen() {
     }
 }
 
-// ---------------- 3. شاشة تشخيص الـ IP والشبكة ----------------
 @Composable
-fun NetworkDiagnosticsScreen() {
+fun NetworkDiagnosticsScreen(lang: AppLanguage, onLangToggle: (AppLanguage) -> Unit) {
     val context = LocalContext.current
     val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     val wifiInfo = wifiManager.connectionInfo
     val ssid = wifiInfo.ssid.replace("\"", "")
@@ -403,17 +514,38 @@ fun NetworkDiagnosticsScreen() {
             .background(Color(0xFF121212))
             .padding(16.dp)
     ) {
-        Text("معلومات وتخخيص الشبكة", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        HeaderBar(lang, onLangToggle)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            if (lang == AppLanguage.AR) "تشخيص وعنوان الشبكة" else "Network Diagnostics",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("اسم الشبكة (SSID): $ssid", color = Color.White, fontSize = 15.sp)
+                Text(
+                    if (lang == AppLanguage.AR) "اسم الشبكة (SSID): $ssid" else "WiFi SSID: $ssid",
+                    color = Color.White,
+                    fontSize = 15.sp
+                )
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("عنوان الـ IP المحلي: $ipAddress", color = Color(0xFF00E5FF), fontSize = 15.sp)
+                Text(
+                    if (lang == AppLanguage.AR) "عنوان الـ IP المحلي: $ipAddress" else "Local IP Address: $ipAddress",
+                    color = Color(0xFF00E5FF),
+                    fontSize = 15.sp
+                )
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("قوة الإشارة: $rssi dBm", color = Color.LightGray, fontSize = 14.sp)
+                Text(
+                    if (lang == AppLanguage.AR) "قوة الإشارة: $rssi dBm" else "Signal Strength: $rssi dBm",
+                    color = Color.LightGray,
+                    fontSize = 14.sp
+                )
             }
         }
     }
@@ -427,6 +559,24 @@ fun formatIpAddress(ip: Int): String {
         ip shr 16 and 0xff,
         ip shr 24 and 0xff
     )
+}
+
+fun checkUsagePermission(context: Context): Boolean {
+    val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        appOps.unsafeCheckOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            context.packageName
+        )
+    } else {
+        appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            context.packageName
+        )
+    }
+    return mode == AppOpsManager.MODE_ALLOWED
 }
 
 fun openAppSettings(context: Context, packageName: String) {

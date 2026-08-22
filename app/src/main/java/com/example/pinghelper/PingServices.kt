@@ -1,7 +1,6 @@
 package com.example.pinghelper
 
 import android.app.*
-import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.net.VpnService
@@ -13,19 +12,16 @@ import android.view.WindowManager
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
-import java.io.IOException
 import java.net.InetAddress
 
 class PingVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
-        if (action == "STOP") {
+        if (intent?.action == "STOP") {
             stopVpn()
             return START_NOT_STICKY
         }
-
         startVpn()
         return START_STICKY
     }
@@ -34,7 +30,7 @@ class PingVpnService : VpnService() {
         try {
             val builder = Builder()
                 .addAddress("10.1.10.1", 24)
-                .addDnsServer("1.1.1.1") // Cloudflare DNS Gaming
+                .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
                 .setSession("PingHelper Secure DNS")
 
@@ -69,8 +65,8 @@ class PingVpnService : VpnService() {
         }
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("مُسرّع البينج والجدار الناري مفعّل")
-            .setContentText("التطبيق يعمل على حماية وتحسين اتصالات الألعاب الآن")
+            .setContentTitle("PingHelper Gaming Booster Active")
+            .setContentText("Optimizing network latency & DNS...")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .build()
 

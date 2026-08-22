@@ -9,7 +9,6 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -27,7 +26,6 @@
             </intent-filter>
         </activity>
 
-        <!-- خدمة VPN للجدار الناري وتغيير الـ DNS -->
         <service
             android:name=".PingVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
@@ -37,7 +35,6 @@
             </intent-filter>
         </service>
 
-        <!-- خدمة النافذة العائمة فوق الألعاب -->
         <service
             android:name=".FloatingPingService"
             android:enabled="true"
